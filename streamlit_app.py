@@ -3,11 +3,12 @@ import requests
 from PIL import Image
 from io import BytesIO
 import base64
+import json
 
 # Setting page layout
 st.set_page_config(
-    page_title="Hugging Face Image-to-Image Generation",
-    page_icon="🖼️",
+    page_title="Hugging Face Image Generation",
+    page_icon="✨",
     layout="centered",
     initial_sidebar_state="expanded"
 )
@@ -17,12 +18,13 @@ huggingface_api_key = st.secrets["huggingface_key"]
 
 # Sidebar
 st.sidebar.header("About App")
-st.sidebar.markdown('This is an image-to-image generation app using Hugging Face models by <a href="https://ai.jdavis.xyz" target="_blank">0xjdavis</a>.', unsafe_allow_html=True)
+st.sidebar.markdown('This is an image generation and manipulation app using Hugging Face models by <a href="https://ai.jdavis.xyz" target="_blank">0xjdavis</a>.', unsafe_allow_html=True)
 
 # Model selection
 model_options = {
-    "stable-diffusion-xl-refiner-1.0": "stabilityai/stable-diffusion-xl-refiner-1.0",
-    "stable-diffusion-2-1": "stabilityai/stable-diffusion-2-1",
+    "Midjourney v6": "Kvikontent/midjourney-v6",
+    "FLUX.1-schnell": "black-forest-labs/FLUX.1-schnell",
+    "Stable Diffusion v1.5": "runwayml/stable-diffusion-v1-5"  # Added for image-to-image
 }
 selected_model = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
@@ -43,62 +45,63 @@ st.sidebar.markdown("""
 # Copyright
 st.sidebar.caption("©️ Copyright 2024 J. Davis")
 
-st.title("Hugging Face Image-to-Image Generation")
-st.write(f"Image transformation powered by {selected_model} Model")
+st.title("Hugging Face Image Generation and Manipulation")
+st.write(f"Powered by {selected_model} Model")
 
 # Image upload
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+use_uploaded_image = False
 
 if uploaded_file is not None:
-    # Display the uploaded image
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_column_width=True)
-    
-    # Prompt for image transformation
-    prompt = st.text_input("Enter a prompt to transform the image:")
-    
-    if st.button("Generate New Image"):
-        if not huggingface_api_key:
-            st.error("Please add your Hugging Face API key to continue.")
-            st.stop()
-        
-        # Prepare the image for API
+    st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
+    use_uploaded_image = st.checkbox("Use this image for image-to-image generation")
+
+# Text input for prompt
+prompt = st.text_input("Enter your prompt for image generation:")
+
+if st.button("Generate Image"):
+    if not huggingface_api_key:
+        st.info("Please add your Hugging Face API key to continue.")
+        st.stop()
+
+    API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
+    headers = {"Authorization": f"Bearer {huggingface_api_key}"}
+
+    def query(payload):
+        response = requests.post(API_URL, headers=headers, json=payload)
+        return response
+
+    if use_uploaded_image and uploaded_file is not None:
+        # Image-to-image generation
+        image = Image.open(uploaded_file)
         buffered = BytesIO()
         image.save(buffered, format="PNG")
         image_str = base64.b64encode(buffered.getvalue()).decode()
-        
-        # API call
-        API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
-        headers = {"Authorization": f"Bearer {huggingface_api_key}"}
-        
         payload = {
-            "inputs": {
-                "image": image_str,
-                "prompt": prompt
-            }
+            "inputs": prompt,
+            "image": image_str
         }
-        
-        with st.spinner("Generating new image..."):
-            response = requests.post(API_URL, headers=headers, json=payload)
-        
-        if response.status_code == 200:
-            # Successfully received the image
-            image_bytes = response.content
-            generated_image = Image.open(BytesIO(image_bytes))
-            st.image(generated_image, caption="Generated Image", use_column_width=True)
-            
-            # Download button
-            buffered_output = BytesIO()
-            generated_image.save(buffered_output, format="PNG")
-            img_str = base64.b64encode(buffered_output.getvalue()).decode()
-            href = f'<a href="data:file/png;base64,{img_str}" download="generated_image.png">Download Generated Image</a>'
-            st.markdown(href, unsafe_allow_html=True)
-        else:
-            st.error(f"Error generating image: {response.status_code} - {response.text}")
+    else:
+        # Text-to-image generation
+        payload = {
+            "inputs": prompt,
+        }
 
-# CTA BUTTON
-url = "/Hugging%20Face%20Image%20To%20Image%20Generation"
-st.markdown(
-    f'<div><a href="{url}" target="_self" style="justify-content:center; padding: 10px 10px; background-color: #2D2D2D; color: #efefef; text-align: center; text-decoration: none; font-size: 16px; border-radius: 8px;">Clear History</a></div><br /><br />',
-    unsafe_allow_html=True
-)
+    with st.spinner("Generating image..."):
+        response = query(payload)
+
+    if response.status_code == 200:
+        image = Image.open(BytesIO(response.content))
+        st.image(image, caption="Generated Image")
+
+        with st.expander("View Image Details"):
+            # DOWNLOAD BUTTON
+            btn = st.download_button(
+                label="Download Image",
+                data=response.content,
+                file_name="generated_image.png",
+                mime="image/png",
+            )
+    else:
+        st.error(f"Error generating image: {response.status_code} - {response.text}")
+        st.json(response.json())  # Display the full error response for debugging
