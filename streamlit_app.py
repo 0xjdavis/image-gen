@@ -67,7 +67,7 @@ st.write(f"Prompted artwork powered by {selected_model} Model")
 
 # CTA BUTTON
 if "messages" in st.session_state:
-    url = "/Hugging%20Face%20Text%20To%20Image%20Generation"
+    url = "https://image-image-gen.streamlit.app"
     st.markdown(
         f'<div><a href="{url}" target="_self" style="justify-content:center; padding: 10px 10px; background-color: #2D2D2D; color: #efefef; text-align: center; text-decoration: none; font-size: 16px; border-radius: 8px;">Clear History</a></div><br /><br />',
         unsafe_allow_html=True
