@@ -94,13 +94,12 @@ if mode == "Text-to-Image":
 elif mode == "Image-to-Image":
     st.subheader("Image-to-Image Generation")
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-   
+    prompt = st.text_input("Enter a prompt to guide the image generation (optional):")
+    
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.image(image, caption="Uploaded Image", use_column_width=True)
-         
-        prompt = st.text_input("Enter a prompt to guide the image generation (optional):")
-    
+        
         if st.button("Generate New Image"):
             if not huggingface_api_key:
                 st.info("Please add your Hugging Face API key to continue.")
