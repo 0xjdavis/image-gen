@@ -18,11 +18,11 @@ huggingface_api_key = st.secrets["huggingface_key"]
 
 # Sidebar
 st.sidebar.header("About App")
-st.sidebar.markdown('This is a zero-shot image-to-image generation chatbot using Hugging Face models by <a href="https://ai.jdavis.xyz" target="_blank">0xjdavis</a>.', unsafe_allow_html=True)
+st.sidebar.markdown('This is an image-to-image generation chatbot using Hugging Face models by <a href="https://ai.jdavis.xyz" target="_blank">0xjdavis</a>.', unsafe_allow_html=True)
 
 # Model selection
 model_options = {
-    "Stable Diffusion v1.5": "runwayml/stable-diffusion-v1-5"
+    "Stable Diffusion v1.4": "CompVis/stable-diffusion-v1-4"
 }
 selected_model = st.sidebar.selectbox("Select Model", list(model_options.keys()))
 
@@ -45,7 +45,92 @@ with model_status:
         else:
             st.warning("Model is still loading. You may experience delays.")
 
-# Calendly
+# Main content
+st.title("Hugging Face Image-to-Image Generation")
+st.write(f"Image transformation powered by {selected_model} Model")
+
+# Image upload
+uploaded_file = st.file_uploader("Upload an image to transform", type=["png", "jpg", "jpeg"])
+if uploaded_file is not None:
+    st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
+    # Store the uploaded image in session state
+    st.session_state['uploaded_image'] = Image.open(uploaded_file).convert('RGB')
+
+# Chat interface
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [{"role": "assistant", "content": "Upload an image and provide a description of how you'd like to transform it."}]
+
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+if prompt := st.chat_input():
+    if not huggingface_api_key:
+        st.info("Please add your Hugging Face API key to continue.")
+        st.stop()
+
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
+
+    if 'uploaded_image' not in st.session_state:
+        st.warning("Please upload an image before generating.")
+        st.stop()
+
+    # GENERATE IMAGE
+    API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
+    headers = {"Authorization": f"Bearer {huggingface_api_key}"}
+
+    def query(payload):
+        response = requests.post(API_URL, headers=headers, json=payload)
+        return response
+
+    # Prepare payload
+    buffered = BytesIO()
+    st.session_state['uploaded_image'].save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    payload = {
+        "inputs": {
+            "image": img_str,
+            "prompt": prompt
+        }
+    }
+
+    with st.spinner("Transforming image..."):
+        max_retries = 5
+        retry_delay = 10
+        for attempt in range(max_retries):
+            response = query(payload)
+            if response.status_code == 200:
+                image_bytes = response.content
+                image = Image.open(BytesIO(image_bytes))
+                st.image(image, caption="Transformed Image")
+
+                with st.expander("View Image Details"):
+                    # DOWNLOAD BUTTON
+                    btn = st.download_button(
+                        label="Download Image",
+                        data=image_bytes,
+                        file_name="transformed_image.png",
+                        mime="image/png",
+                    )
+                break
+            elif response.status_code == 503:
+                error_msg = response.json()
+                if "estimated_time" in error_msg:
+                    wait_time = min(error_msg["estimated_time"], retry_delay)
+                    st.warning(f"Model is still loading. Retrying in {wait_time:.1f} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    st.error(f"Error transforming image: {response.status_code} - {response.text}")
+                    break
+            else:
+                st.error(f"Error transforming image: {response.status_code} - {response.text}")
+                break
+        else:
+            st.error("Failed to transform image after multiple attempts. Please try again later.")
+
+    st.session_state.messages.append({"role": "assistant", "content": f"Here's the image I transformed based on your prompt: '{prompt}'"})
+
+# Calendly and Copyright (unchanged)
 st.sidebar.markdown("""
     <hr />
     <center>
@@ -59,85 +144,4 @@ st.sidebar.markdown("""
     <br />
 """, unsafe_allow_html=True)
 
-# Copyright
 st.sidebar.caption("©️ Copyright 2024 J. Davis")
-
-st.title("Hugging Face Image-to-Image Generation")
-st.write(f"Prompted artwork powered by {selected_model} Model")
-
-# CTA BUTTON
-if "messages" in st.session_state:
-    url = "https://image-image-gen.streamlit.app"
-    st.markdown(
-        f'<div><a href="{url}" target="_self" style="justify-content:center; padding: 10px 10px; background-color: #2D2D2D; color: #efefef; text-align: center; text-decoration: none; font-size: 16px; border-radius: 8px;">Clear History</a></div><br /><br />',
-        unsafe_allow_html=True
-    )
-
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "I am feeling creative today! What would you like to generate an image of?"}]
-
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-# Image upload
-uploaded_file = st.file_uploader("Upload an image for reference (optional)", type=["png", "jpg", "jpeg"])
-if uploaded_file is not None:
-    st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-
-if prompt := st.chat_input():
-    if not huggingface_api_key:
-        st.info("Please add your Hugging Face API key to continue.")
-        st.stop()
-    
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
-    
-    # GENERATE IMAGE
-    API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
-    headers = {"Authorization": f"Bearer {huggingface_api_key}"}
-    
-    def query(payload):
-        response = requests.post(API_URL, headers=headers, json=payload)
-        return response
-    
-    # Prepare payload
-    payload = {"inputs": prompt}
-    if uploaded_file is not None:
-        img_bytes = uploaded_file.getvalue()
-        payload["image"] = base64.b64encode(img_bytes).decode('utf-8')
-    
-    with st.spinner("Generating image..."):
-        max_retries = 5
-        retry_delay = 10
-        for attempt in range(max_retries):
-            response = query(payload)
-            if response.status_code == 200:
-                image_bytes = response.content
-                image = Image.open(BytesIO(image_bytes))
-                st.image(image, caption="Generated Image")
-                
-                with st.expander("View Image Details"):
-                    # DOWNLOAD BUTTON
-                    btn = st.download_button(
-                        label="Download Image",
-                        data=image_bytes,
-                        file_name="generated_image.png",
-                        mime="image/png",
-                    )
-                break
-            elif response.status_code == 503:
-                error_msg = response.json()
-                if "estimated_time" in error_msg:
-                    wait_time = min(error_msg["estimated_time"], retry_delay)
-                    st.warning(f"Model is still loading. Retrying in {wait_time:.1f} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    st.error(f"Error generating image: {response.status_code} - {response.text}")
-                    break
-            else:
-                st.error(f"Error generating image: {response.status_code} - {response.text}")
-                break
-        else:
-            st.error("Failed to generate image after multiple attempts. Please try again later.")
-    
-    st.session_state.messages.append({"role": "assistant", "content": f"Here's the image I generated based on your prompt: '{prompt}'"})
