@@ -21,8 +21,8 @@ st.sidebar.markdown('This is an image generation and modification app using Hugg
 
 # Model selection
 model_options = {
-    "Midjourney v6": "Kvikontent/midjourney-v6",
-    "FLUX.1-schnell": "black-forest-labs/FLUX.1-schnell",
+    # "Midjourney v6": "Kvikontent/midjourney-v6",
+    # "FLUX.1-schnell": "black-forest-labs/FLUX.1-schnell",
     "Stable Diffusion v1.5": "runwayml/stable-diffusion-v1-5"  # Added for image-to-image
 }
 selected_model = st.sidebar.selectbox("Select Model", list(model_options.keys()))
