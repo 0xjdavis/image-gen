@@ -1,6 +1,6 @@
-# 🎈 Text-to-Image Chatbot
+# 🎈 Image-to-Image Chatbot
 
-Uses natural language to generate images with OpenAI 🐑 Dall-e
+Uses natural language to generate images from images with Hugging Face models.
 
 ### How to run it on your own machine
 
