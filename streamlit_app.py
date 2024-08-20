@@ -3,7 +3,6 @@ import requests
 from PIL import Image
 from io import BytesIO
 import base64
-import json
 
 # Setting page layout
 st.set_page_config(
@@ -18,7 +17,7 @@ huggingface_api_key = st.secrets["huggingface_key"]
 
 # Sidebar
 st.sidebar.header("About App")
-st.sidebar.markdown('This is an image generation and manipulation app using Hugging Face models by <a href="https://ai.jdavis.xyz" target="_blank">0xjdavis</a>.', unsafe_allow_html=True)
+st.sidebar.markdown('This is an image generation and modification app using Hugging Face models by <a href="https://ai.jdavis.xyz" target="_blank">0xjdavis</a>.', unsafe_allow_html=True)
 
 # Model selection
 model_options = {
@@ -45,34 +44,46 @@ st.sidebar.markdown("""
 # Copyright
 st.sidebar.caption("©️ Copyright 2024 J. Davis")
 
-st.title("Hugging Face Image Generation and Manipulation")
+st.title("Hugging Face Image Generation and Modification")
 st.write(f"Powered by {selected_model} Model")
 
 # Image upload
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-use_uploaded_image = False
-
 if uploaded_file is not None:
     st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-    use_uploaded_image = st.checkbox("Use this image for image-to-image generation")
 
-# Text input for prompt
-prompt = st.text_input("Enter your prompt for image generation:")
+# CTA BUTTON
+if "messages" in st.session_state:
+    url = "/Hugging%20Face%20Image%20Generation"
+    st.markdown(
+        f'<div><a href="{url}" target="_self" style="justify-content:center; padding: 10px 10px; background-color: #2D2D2D; color: #efefef; text-align: center; text-decoration: none; font-size: 16px; border-radius: 8px;">Clear History</a></div><br /><br />',
+        unsafe_allow_html=True
+    )
 
-if st.button("Generate Image"):
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [{"role": "assistant", "content": "I am feeling creative today! What would you like to generate or modify an image of?"}]
+
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+if prompt := st.chat_input():
     if not huggingface_api_key:
         st.info("Please add your Hugging Face API key to continue.")
         st.stop()
-
+    
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
+    
+    # GENERATE OR MODIFY IMAGE
     API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
     headers = {"Authorization": f"Bearer {huggingface_api_key}"}
-
+    
     def query(payload):
         response = requests.post(API_URL, headers=headers, json=payload)
         return response
-
-    if use_uploaded_image and uploaded_file is not None:
-        # Image-to-image generation
+    
+    if uploaded_file is not None:
+        # Image-to-Image
         image = Image.open(uploaded_file)
         buffered = BytesIO()
         image.save(buffered, format="PNG")
@@ -82,18 +93,18 @@ if st.button("Generate Image"):
             "image": image_str
         }
     else:
-        # Text-to-image generation
+        # Text-to-Image
         payload = {
             "inputs": prompt,
         }
-
+    
     with st.spinner("Generating image..."):
         response = query(payload)
-
+    
     if response.status_code == 200:
         image = Image.open(BytesIO(response.content))
-        st.image(image, caption="Generated Image")
-
+        st.image(image, caption="Generated/Modified Image")
+        
         with st.expander("View Image Details"):
             # DOWNLOAD BUTTON
             btn = st.download_button(
@@ -102,6 +113,18 @@ if st.button("Generate Image"):
                 file_name="generated_image.png",
                 mime="image/png",
             )
+            
+            # Display base64 encoded image for debugging
+            st.text("Base64 Encoded Image:")
+            st.text(base64.b64encode(response.content).decode())
     else:
-        st.error(f"Error generating image: {response.status_code} - {response.text}")
-        st.json(response.json())  # Display the full error response for debugging
+        error_message = f"Error generating image: {response.status_code} - {response.text}"
+        st.error(error_message)
+        if "CUDA out of memory" in response.text:
+            st.warning("The model is currently overloaded. Please try again later or try a different model.")
+        elif response.status_code == 503:
+            st.warning("The model is currently loading. Please try again in a few moments.")
+        else:
+            st.warning("An unexpected error occurred. Please check your input and try again.")
+
+    st.session_state.messages.append({"role": "assistant", "content": "Here's the generated/modified image based on your prompt."})
