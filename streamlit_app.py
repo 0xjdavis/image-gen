@@ -36,7 +36,7 @@ def check_model_status(model_id):
     response = requests.get(API_URL, headers=headers)
     return response.status_code == 200
 
-# Check and display model status with loading animation
+# Check and display model status
 with model_status:
     with st.spinner("Checking model status..."):
         is_model_ready = check_model_status(model_options[selected_model])
@@ -44,34 +44,6 @@ with model_status:
             st.success("Model is ready!")
         else:
             st.warning("Model is still loading. You may experience delays.")
-            st.markdown(
-                """
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                </div>
-                <style>
-                    .loading-spinner {
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 50px;
-                    }
-                    .spinner {
-                        border: 4px solid #f3f3f3;
-                        border-top: 4px solid #3498db;
-                        border-radius: 50%;
-                        width: 30px;
-                        height: 30px;
-                        animation: spin 1s linear infinite;
-                    }
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                </style>
-                """,
-                unsafe_allow_html=True
-            )
 
 # Calendly
 st.sidebar.markdown("""
@@ -102,13 +74,13 @@ if "messages" in st.session_state:
     )
 
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "I am feeling creative today! Upload an image and tell me how you'd like to modify it."}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "I am feeling creative today! What would you like to generate an image of?"}]
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 # Image upload
-uploaded_file = st.file_uploader("Upload an image to modify", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload an image for reference (optional)", type=["png", "jpg", "jpeg"])
 if uploaded_file is not None:
     st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
 
@@ -117,30 +89,23 @@ if prompt := st.chat_input():
         st.info("Please add your Hugging Face API key to continue.")
         st.stop()
     
-    if uploaded_file is None:
-        st.warning("Please upload an image before entering a prompt.")
-        st.stop()
-
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
-
+    
     # GENERATE IMAGE
     API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
     headers = {"Authorization": f"Bearer {huggingface_api_key}"}
-
+    
     def query(payload):
         response = requests.post(API_URL, headers=headers, json=payload)
         return response
-
+    
     # Prepare payload
-    img_bytes = uploaded_file.getvalue()
-    payload = {
-        "inputs": {
-            "image": base64.b64encode(img_bytes).decode('utf-8'),
-            "prompt": prompt
-        }
-    }
-
+    payload = {"inputs": prompt}
+    if uploaded_file is not None:
+        img_bytes = uploaded_file.getvalue()
+        payload["image"] = base64.b64encode(img_bytes).decode('utf-8')
+    
     with st.spinner("Generating image..."):
         max_retries = 5
         retry_delay = 10
@@ -150,7 +115,7 @@ if prompt := st.chat_input():
                 image_bytes = response.content
                 image = Image.open(BytesIO(image_bytes))
                 st.image(image, caption="Generated Image")
-
+                
                 with st.expander("View Image Details"):
                     # DOWNLOAD BUTTON
                     btn = st.download_button(
@@ -159,10 +124,6 @@ if prompt := st.chat_input():
                         file_name="generated_image.png",
                         mime="image/png",
                     )
-
-                    # Display base64 encoded image for debugging
-                    st.text("Base64 Encoded Image:")
-                    st.text(base64.b64encode(image_bytes).decode())
                 break
             elif response.status_code == 503:
                 error_msg = response.json()
@@ -178,5 +139,5 @@ if prompt := st.chat_input():
                 break
         else:
             st.error("Failed to generate image after multiple attempts. Please try again later.")
-
+    
     st.session_state.messages.append({"role": "assistant", "content": f"Here's the image I generated based on your prompt: '{prompt}'"})
