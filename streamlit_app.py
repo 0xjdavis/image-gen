@@ -50,15 +50,14 @@ st.title("Hugging Face Image-to-Image Generation")
 st.write(f"Image transformation powered by {selected_model} Model")
 
 # Image upload
-uploaded_file = st.file_uploader("Upload an image to transform", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload an image for reference", type=["png", "jpg", "jpeg"])
 if uploaded_file is not None:
     st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-    # Store the uploaded image in session state
     st.session_state['uploaded_image'] = Image.open(uploaded_file).convert('RGB')
 
 # Chat interface
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Upload an image and provide a description of how you'd like to transform it."}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "Upload an image and provide a description for transformation!"}]
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
@@ -75,6 +74,11 @@ if prompt := st.chat_input():
         st.warning("Please upload an image before generating.")
         st.stop()
 
+    # Prepare image
+    img_byte_arr = BytesIO()
+    st.session_state['uploaded_image'].save(img_byte_arr, format='PNG')
+    img_byte_arr = img_byte_arr.getvalue()
+
     # GENERATE IMAGE
     API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
     headers = {"Authorization": f"Bearer {huggingface_api_key}"}
@@ -84,17 +88,12 @@ if prompt := st.chat_input():
         return response
 
     # Prepare payload
-    buffered = BytesIO()
-    st.session_state['uploaded_image'].save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
     payload = {
-        "inputs": {
-            "image": img_str,
-            "prompt": prompt
-        }
+        "inputs": prompt,
+        "image": base64.b64encode(img_byte_arr).decode('utf-8')
     }
 
-    with st.spinner("Transforming image..."):
+    with st.spinner("Generating image..."):
         max_retries = 5
         retry_delay = 10
         for attempt in range(max_retries):
@@ -102,14 +101,13 @@ if prompt := st.chat_input():
             if response.status_code == 200:
                 image_bytes = response.content
                 image = Image.open(BytesIO(image_bytes))
-                st.image(image, caption="Transformed Image")
+                st.image(image, caption="Generated Image")
 
-                with st.expander("View Image Details"):
-                    # DOWNLOAD BUTTON
+                with st.expander("Download Image"):
                     btn = st.download_button(
                         label="Download Image",
                         data=image_bytes,
-                        file_name="transformed_image.png",
+                        file_name="generated_image.png",
                         mime="image/png",
                     )
                 break
@@ -120,15 +118,15 @@ if prompt := st.chat_input():
                     st.warning(f"Model is still loading. Retrying in {wait_time:.1f} seconds...")
                     time.sleep(wait_time)
                 else:
-                    st.error(f"Error transforming image: {response.status_code} - {response.text}")
+                    st.error(f"Error generating image: {response.status_code} - {response.text}")
                     break
             else:
-                st.error(f"Error transforming image: {response.status_code} - {response.text}")
+                st.error(f"Error generating image: {response.status_code} - {response.text}")
                 break
         else:
-            st.error("Failed to transform image after multiple attempts. Please try again later.")
+            st.error("Failed to generate image after multiple attempts. Please try again later.")
 
-    st.session_state.messages.append({"role": "assistant", "content": f"Here's the image I transformed based on your prompt: '{prompt}'"})
+    st.session_state.messages.append({"role": "assistant", "content": f"Here's the image I generated based on your prompt: '{prompt}'"})
 
 # Calendly and Copyright (unchanged)
 st.sidebar.markdown("""
